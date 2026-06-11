@@ -35,6 +35,7 @@ const {
   updatePost,
   sendWebhooks,
   isCommentable,
+  orgIsActive,
 } = proxyActivities<PostActivity>({
   startToCloseTimeout: '10 minute',
   retry: {
@@ -114,6 +115,31 @@ export async function postWorkflowV102({
       post.organizationId,
       `We couldn't post to ${post.integration?.providerIdentifier} for ${post?.integration?.name}`,
       `We couldn't post to ${post.integration?.providerIdentifier} for ${post?.integration?.name} because it's disabled. Please enable it and try again.`,
+      true,
+      false,
+      'info'
+    );
+    return;
+  }
+
+  // EOMA #1013 entitlement gate: skip publishing for a CHURNED brand. EOMA owns
+  // subscription state (this Postiz shares its DB); orgIsActive asks EOMA whether
+  // the org's brand is still active. FAIL-OPEN — orgIsActive returns true on any
+  // error, so a gate fault can't silently halt every brand's posts. Only a
+  // definitively-inactive brand is skipped. Mark the post ERROR + notify so the
+  // user (who re-subscribes) sees why it didn't go out.
+  const eomaActive = await orgIsActive(post.organizationId);
+  if (!eomaActive) {
+    await changeState(
+      postsListBefore[0].id,
+      'ERROR',
+      new Error('subscription_inactive'),
+      postsListBefore
+    );
+    await inAppNotification(
+      post.organizationId,
+      'Post not published — subscription inactive',
+      `Your scheduled post to ${post.integration?.providerIdentifier} was not published because your subscription is no longer active. Reactivate your plan to resume publishing.`,
       true,
       false,
       'info'

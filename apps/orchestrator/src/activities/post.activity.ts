@@ -23,6 +23,7 @@ import {
   postId as postIdSearchParam,
 } from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
 import { SubscriptionService } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/subscription.service';
+import { EomaEntitlementService } from '@gitroom/nestjs-libraries/database/prisma/eoma-entitlement/eoma-entitlement.service';
 
 @Injectable()
 @Activity()
@@ -35,12 +36,23 @@ export class PostActivity {
     private _refreshIntegrationService: RefreshIntegrationService,
     private _webhookService: WebhooksService,
     private _temporalService: TemporalService,
-    private _subscriptionService: SubscriptionService
+    private _subscriptionService: SubscriptionService,
+    private _eomaEntitlement: EomaEntitlementService
   ) {}
 
   @ActivityMethod()
   async getIntegrationById(orgId: string, id: string) {
     return this._integrationService.getIntegrationById(orgId, id);
+  }
+
+  /**
+   * EOMA #1013: is the EOMA brand behind this org still entitled to publish?
+   * Fail-open (returns true on any error). Called by postWorkflowV102 before
+   * postSocial to skip publishing for churned brands.
+   */
+  @ActivityMethod()
+  async orgIsActive(organizationId: string): Promise<boolean> {
+    return this._eomaEntitlement.isOrgActive(organizationId);
   }
 
   @ActivityMethod()
